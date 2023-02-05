@@ -38,8 +38,9 @@ fn ec_cmd(cmd: u8, p1: u8, p2: u8) {
     ec_ram_write(0xb1, p1);
     ec_ram_write(0xb2, p2);
     ec_ram_write(0xbf, 0x10);
-    thread::sleep(Duration::from_millis(5));
+    thread::sleep(Duration::from_millis(10));
     ec_ram_write(0xbf, 0xff);
+    thread::sleep(Duration::from_millis(10));
 }
 
 // TODO: make sure it has proper values from /proc/ioports
@@ -143,10 +144,10 @@ fn main() {
 
     // enable our control over those leds
     ec_cmd(0x03, 0x02, 0xc0);
+    set_pixel(Joystick::Left, LedPosition::Top, (255, 255, 255));
 
     for i in 0..250 {
+        println!("{}", i);
         set_pixel(Joystick::Right, LedPosition::Right, (0, i, 0));
-        set_pixel(Joystick::Left, LedPosition::Left, (0, i, 0));
-        thread::sleep(Duration::from_millis(10));
     }
 }
