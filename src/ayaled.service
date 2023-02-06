@@ -1,0 +1,8 @@
+[Unit]
+Description=Aya Neo LED manager
+
+[Service]
+ExecStart=/usr/bin/ayaled
+
+[Install]
+WantedBy=multi-user.target

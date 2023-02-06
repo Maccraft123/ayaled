@@ -1,5 +1,6 @@
 [package]
 name = "ayaled"
+authors = [ "Maya Matuszczyk <maccraft123mc@gmail.com>" ]
 version = "0.1.0"
 edition = "2021"
 
