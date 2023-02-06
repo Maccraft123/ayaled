@@ -100,7 +100,7 @@ static EC_RAM_METHOD: Lazy<Mutex<EcRamAccess>> = Lazy::new(|| {
             }
         }
     } else {
-        Mutex::new(EcRamAccess::IoPort)
+        panic!("Not running on a supported device");
     }
 });
 
