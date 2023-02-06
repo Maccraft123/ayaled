@@ -22,6 +22,18 @@ enum LedPosition {
     Top = 4,
 }
 
+fn set_all_pixels(color: (u8, u8, u8)) {
+    set_pixel(Joystick::Left, LedPosition::Right, color);
+    set_pixel(Joystick::Left, LedPosition::Bottom, color);
+    set_pixel(Joystick::Left, LedPosition::Left, color);
+    set_pixel(Joystick::Left, LedPosition::Top, color);
+    
+    set_pixel(Joystick::Right, LedPosition::Right, color);
+    set_pixel(Joystick::Right, LedPosition::Bottom, color);
+    set_pixel(Joystick::Right, LedPosition::Left, color);
+    set_pixel(Joystick::Right, LedPosition::Top, color);
+}
+
 fn set_pixel(js: Joystick, led: LedPosition, color: (u8, u8, u8)) {
     set_subpixel(js, led as u8 * 3, color.0);
     set_subpixel(js, led as u8 * 3 + 1, color.1);
@@ -137,6 +149,21 @@ fn inb(port: u16) -> u8 {
     ret
 }
 
+fn cap_to_rgb(capacity: u8) -> (u8, u8, u8) {
+    match capacity {
+        0..=20 => (255, 0, 0),
+        90..=100 => (0, 0, 255),
+        _ => (0, 0, 0),
+    }
+}
+
+fn status_to_rgb(status: &str, capacity: u8) -> Option<(u8, u8, u8)> {
+    match status.trim() {
+        "Charging" => if capacity < 90 { Some((0, 255, 0)) } else { None },
+        _ => None,
+    }
+}
+
 fn main() {
     if unsafe { iopl(3) } != 0 {
         panic!("You must be root to run this utility");
@@ -144,10 +171,31 @@ fn main() {
 
     // enable our control over those leds
     ec_cmd(0x03, 0x02, 0xc0);
-    set_pixel(Joystick::Left, LedPosition::Top, (255, 255, 255));
 
-    for i in 0..250 {
-        println!("{}", i);
-        set_pixel(Joystick::Right, LedPosition::Right, (0, i, 0));
+    // find battery
+    let battery_dir = fs::read_dir("/sys/class/power_supply").expect("Failed to open /sys/class/power_supply")
+        .flatten()
+        .find(|ps| {
+            let mut path = ps.path();
+            path.push("type");
+            fs::read_to_string(path).unwrap_or("asdf".into()).trim() == "Battery"
+        })
+        .map(|dir| dir.path())
+        .expect("Failed to find battery");
+
+    let battery_cap_path = { let mut tmp = battery_dir.clone(); tmp.push("capacity"); tmp };
+    let battery_status_path = { let mut tmp = battery_dir.clone(); tmp.push("status"); tmp };
+
+    println!("Found battery at {:?}", &battery_dir);
+    loop {
+        let capacity = fs::read_to_string(&battery_cap_path).expect("Failed to read battery capacity").trim().parse::<u8>().unwrap_or(0);
+        let status = fs::read_to_string(&battery_status_path).expect("Failed to read battery status");
+        if let Some(color) = status_to_rgb(&status, capacity) {
+            set_all_pixels(color);
+        } else {
+            let color = cap_to_rgb(capacity);
+            set_all_pixels(color);
+        }
+        thread::sleep(Duration::from_millis(500));
     }
 }
