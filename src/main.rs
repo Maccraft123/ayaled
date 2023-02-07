@@ -249,6 +249,7 @@ fn main() {
     thread::spawn(|| tcp_thread(theme_mutex_2));
 
     println!("Found battery at {:?}", &battery_dir);
+    let mut old = (0, 0, 0);
     loop {
         let capacity = fs::read_to_string(&battery_cap_path).expect("Failed to read battery capacity").trim().parse::<u8>().unwrap_or(0);
         let status = fs::read_to_string(&battery_status_path).expect("Failed to read battery status");
@@ -267,7 +268,10 @@ fn main() {
         };
         drop(theme);
 
-        set_all_pixels(color);
-        thread::sleep(Duration::from_millis(500));
+        if old != color {
+            set_all_pixels(color);
+            old = color;
+        }
+        thread::sleep(Duration::from_millis(100));
     }
 }
