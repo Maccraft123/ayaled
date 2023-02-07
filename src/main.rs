@@ -222,6 +222,31 @@ fn tcp_thread(theme: Arc<Mutex<Theme>>) {
     }
 }
 
+fn get_brightness_normalized() -> f32 {
+    let backlight_dir = fs::read_dir("/sys/class/backlight").expect("Failed to open /sys/class/backlight")
+        .flatten()
+        .map(|entry| entry.path())
+        .next()
+        .expect("Failed to find backlight directory");
+
+    let brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("brightness"); tmp };
+    let max_brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("max_brightness"); tmp };
+
+
+    let brightness = fs::read_to_string(&brightness_file)
+        .expect("Failed to read backlight brightness")
+        .trim()
+        .parse::<f32>()
+        .unwrap();
+    let max_brightness = fs::read_to_string(&max_brightness_file)
+        .expect("Failed to read maximum backlight brightness")
+        .trim()
+        .parse::<f32>()
+        .unwrap();
+
+    brightness / max_brightness
+}
+
 fn main() {
     if unsafe { iopl(3) } != 0 {
         panic!("You must be root to run this utility");
@@ -268,9 +293,13 @@ fn main() {
         };
         drop(theme);
 
-        if old != color {
-            set_all_pixels(color);
-            old = color;
+        let scale = get_brightness_normalized();
+        let tmp = (color.0 as f32 * scale, color.1 as f32 * scale, color.2 as f32 * scale);
+        let adjusted_color = (tmp.0 as u8, tmp.1 as u8, tmp.2 as u8);
+
+        if old != adjusted_color {
+            set_all_pixels(adjusted_color);
+            old = adjusted_color;
         }
         thread::sleep(Duration::from_millis(100));
     }
