@@ -2,8 +2,10 @@ use std::thread;
 use std::fs::{self, OpenOptions};
 use std::time::{Instant, Duration};
 use std::arch::asm;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::ops::DerefMut;
+use std::net::{TcpStream, TcpListener};
+use std::io::{BufRead, BufReader};
 use memmap::{MmapMut, MmapOptions};
 use libc::iopl;
 use once_cell::sync::Lazy;
@@ -149,18 +151,75 @@ fn inb(port: u16) -> u8 {
     ret
 }
 
-fn cap_to_rgb(capacity: u8) -> (u8, u8, u8) {
-    match capacity {
-        0..=20 => (255, 0, 0),
-        90..=100 => (0, 0, 255),
-        _ => (0, 0, 0),
+struct Theme {
+    charging: (u8, u8, u8),
+    low_bat: (u8, u8, u8),
+    full: (u8, u8, u8),
+    normal: (u8, u8, u8),
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            charging: (0, 0, 255),
+            low_bat: (255, 0, 0),
+            full: (0, 255, 255),
+            normal: (0, 0, 0),
+        }
     }
 }
 
-fn status_to_rgb(status: &str, capacity: u8) -> Option<(u8, u8, u8)> {
-    match status.trim() {
-        "Charging" => if capacity < 90 { Some((0, 255, 0)) } else { None },
-        _ => None,
+fn handle_client(stream: TcpStream, theme: Arc<Mutex<Theme>>) {
+    let input = BufReader::new(stream);
+    for line in input.lines() {
+        let Ok(line) = line else { continue };
+        let split = line.split(' ');
+        let (mode, r, g, b) = match split.collect::<Vec<_>>().as_slice() {
+            &[_mode, _r, _g, _b] => {
+                let str_to_u8 = |input: &str| {
+                    match input.parse::<u8>() {
+                        Ok(val) => val,
+                        Err(e) => {
+                            eprintln!("Failed to parse into u8");
+                            eprintln!("Due to {}", e);
+                            eprintln!("Substituting with 0");
+                            0
+                        },
+                    }
+                };
+                let r = str_to_u8(_r);
+                let g = str_to_u8(_g);
+                let b = str_to_u8(_b);
+                (_mode, r, g, b)
+            },
+            err => {
+                eprintln!("Invalid format for changing theme");
+                eprintln!("Got: {:?}", err);
+                continue;
+            },
+        };
+
+        let mut t = theme.lock().unwrap();
+        match mode.trim() {
+            "charging" => t.charging = (r, g, b),
+            "low_bat" => t.low_bat = (r, g, b),
+            "full" => t.full = (r, g, b),
+            "normal" => t.normal = (r, g, b),
+            other => eprintln!("Expected one of: charging, low_bat, full, normal, got: {}", other),
+        };
+        drop(t);
+    }
+
+}
+
+fn tcp_thread(theme: Arc<Mutex<Theme>>) {
+    let listener = TcpListener::bind("127.0.0.1:21370")
+        .expect("Failed to listen on 127.0.0.1:21370");
+    for stream in listener.incoming() {
+        if let Ok(s) = stream {
+            let clients_theme = Arc::clone(&theme);
+            thread::spawn(|| handle_client(s, clients_theme));
+        }
     }
 }
 
@@ -186,16 +245,30 @@ fn main() {
     let battery_cap_path = { let mut tmp = battery_dir.clone(); tmp.push("capacity"); tmp };
     let battery_status_path = { let mut tmp = battery_dir.clone(); tmp.push("status"); tmp };
 
+    let theme_mutex = Arc::new(Mutex::new(Theme::default()));
+    let theme_mutex_2 = Arc::clone(&theme_mutex);
+    thread::spawn(|| tcp_thread(theme_mutex_2));
+
     println!("Found battery at {:?}", &battery_dir);
     loop {
         let capacity = fs::read_to_string(&battery_cap_path).expect("Failed to read battery capacity").trim().parse::<u8>().unwrap_or(0);
         let status = fs::read_to_string(&battery_status_path).expect("Failed to read battery status");
-        if let Some(color) = status_to_rgb(&status, capacity) {
-            set_all_pixels(color);
-        } else {
-            let color = cap_to_rgb(capacity);
-            set_all_pixels(color);
-        }
+        let theme = theme_mutex.lock().unwrap();
+        let color = match status.trim() {
+            "Charging" => if capacity < 90 {
+                theme.charging
+            } else {
+                theme.full
+            },
+            _ => match capacity {
+                0..=20 => theme.low_bat,
+                90..=100 => theme.full,
+                _ => theme.normal,
+            },
+        };
+        drop(theme);
+
+        set_all_pixels(color);
         thread::sleep(Duration::from_millis(500));
     }
 }
