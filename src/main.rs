@@ -44,7 +44,6 @@ fn set_pixel(js: Joystick, led: LedPosition, color: (u8, u8, u8)) {
 
 fn set_subpixel(js: Joystick, subpixel_idx: u8, brightness: u8) {
     ec_cmd(js as u8, subpixel_idx, brightness);
-    ec_cmd(0x3, 0x0, 0x0);
 }
 
 fn ec_cmd(cmd: u8, p1: u8, p2: u8) {
