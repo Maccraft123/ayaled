@@ -2,7 +2,7 @@ use std::thread;
 use std::fs::{self, OpenOptions};
 use std::time::{Instant, Duration};
 use std::arch::asm;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::ops::DerefMut;
 use std::net::{TcpStream, TcpListener};
 use std::io::{BufRead, BufReader};
@@ -222,6 +222,18 @@ fn tcp_thread(theme: Arc<Mutex<Theme>>) {
     }
 }
 
+fn suspend_watcher() {
+    let kern_entries = rmesg::logs_iter(rmesg::Backend::Default, false, false)
+        .expect("Failed to init kernel log iter");
+    for maybe_entry in kern_entries {
+        if let Ok(entry) = maybe_entry {
+            if entry.message.contains("PM: suspend exit") {
+                JUST_RESUMED.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+}
+
 fn get_brightness_normalized() -> Option<f32> {
     let backlight_dir = fs::read_dir("/sys/class/backlight").ok()?
         .flatten()
@@ -245,6 +257,8 @@ fn get_brightness_normalized() -> Option<f32> {
 
     Some(brightness / max_brightness)
 }
+
+static JUST_RESUMED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     if unsafe { iopl(3) } != 0 {
@@ -271,6 +285,7 @@ fn main() {
     let theme_mutex = Arc::new(Mutex::new(Theme::default()));
     let theme_mutex_2 = Arc::clone(&theme_mutex);
     thread::spawn(|| tcp_thread(theme_mutex_2));
+    thread::spawn(|| suspend_watcher());
 
     println!("Found battery at {:?}", &battery_dir);
     let mut old = (0, 0, 0);
@@ -295,8 +310,9 @@ fn main() {
         let scale = get_brightness_normalized().unwrap_or(1.0);
         let tmp = (color.0 as f32 * scale, color.1 as f32 * scale, color.2 as f32 * scale);
         let adjusted_color = (tmp.0 as u8, tmp.1 as u8, tmp.2 as u8);
+        let force_set = JUST_RESUMED.swap(false, Ordering::SeqCst);
 
-        if old != adjusted_color {
+        if old != adjusted_color || force_set {
             set_all_pixels(adjusted_color);
             old = adjusted_color;
         }
