@@ -222,12 +222,11 @@ fn tcp_thread(theme: Arc<Mutex<Theme>>) {
     }
 }
 
-fn get_brightness_normalized() -> f32 {
-    let backlight_dir = fs::read_dir("/sys/class/backlight").expect("Failed to open /sys/class/backlight")
+fn get_brightness_normalized() -> Option<f32> {
+    let backlight_dir = fs::read_dir("/sys/class/backlight").ok()?
         .flatten()
         .map(|entry| entry.path())
-        .next()
-        .expect("Failed to find backlight directory");
+        .next()?;
 
     let brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("brightness"); tmp };
     let max_brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("max_brightness"); tmp };
@@ -237,14 +236,14 @@ fn get_brightness_normalized() -> f32 {
         .expect("Failed to read backlight brightness")
         .trim()
         .parse::<f32>()
-        .unwrap();
+        .unwrap_or(1.0);
     let max_brightness = fs::read_to_string(&max_brightness_file)
         .expect("Failed to read maximum backlight brightness")
         .trim()
         .parse::<f32>()
-        .unwrap();
+        .unwrap_or(1.0);
 
-    brightness / max_brightness
+    Some(brightness / max_brightness)
 }
 
 fn main() {
@@ -293,7 +292,7 @@ fn main() {
         };
         drop(theme);
 
-        let scale = get_brightness_normalized();
+        let scale = get_brightness_normalized().unwrap_or(1.0);
         let tmp = (color.0 as f32 * scale, color.1 as f32 * scale, color.2 as f32 * scale);
         let adjusted_color = (tmp.0 as u8, tmp.1 as u8, tmp.2 as u8);
 
