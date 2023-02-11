@@ -1,11 +1,10 @@
 use std::thread;
+use std::env;
 use std::fs::{self, OpenOptions};
 use std::time::{Instant, Duration};
 use std::arch::asm;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::Mutex;
 use std::ops::DerefMut;
-use std::net::{TcpStream, TcpListener};
-use std::io::{BufRead, BufReader};
 use memmap::{MmapMut, MmapOptions};
 use libc::iopl;
 use once_cell::sync::Lazy;
@@ -77,7 +76,8 @@ enum EcRamAccess {
 static EC_RAM_METHOD: Lazy<Mutex<EcRamAccess>> = Lazy::new(|| {
     let vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor").unwrap_or("asdf".into());
     let name = fs::read_to_string("/sys/class/dmi/id/board_name").unwrap_or("asdf".into());
-    let is_aya_air = vendor.trim() == "AYANEO" && name.trim().contains("AIR");
+    //let is_aya_air = vendor.trim() == "AYANEO" && name.trim().contains("AIR");
+    let is_aya_air = vendor.trim() == "AYANEO";
 
     if is_aya_air {
         eprintln!("Using fast-path EC RAM RW for Aya Neo Air");
@@ -150,126 +150,49 @@ fn inb(port: u16) -> u8 {
     ret
 }
 
-struct Theme {
-    charging: (u8, u8, u8),
-    low_bat: (u8, u8, u8),
-    full: (u8, u8, u8),
-    normal: (u8, u8, u8),
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            charging: (0, 0, 255),
-            low_bat: (255, 0, 0),
-            full: (0, 255, 255),
-            normal: (0, 0, 0),
-        }
+/*fn cap_to_rgb(capacity: u8) -> (u8, u8, u8) {
+    match capacity {
+        0..=20 => (255, 0, 0),
+        90..=100 => (0, 0, 255),
+        _ => (0, 0, 0),
     }
 }
 
-fn handle_client(stream: TcpStream, theme: Arc<Mutex<Theme>>) {
-    let input = BufReader::new(stream);
-    for line in input.lines() {
-        let Ok(line) = line else { continue };
-        let split = line.split(' ');
-        let (mode, r, g, b) = match split.collect::<Vec<_>>().as_slice() {
-            &[_mode, _r, _g, _b] => {
-                let str_to_u8 = |input: &str| {
-                    match input.parse::<u8>() {
-                        Ok(val) => val,
-                        Err(e) => {
-                            eprintln!("Failed to parse into u8");
-                            eprintln!("Due to {}", e);
-                            eprintln!("Substituting with 0");
-                            0
-                        },
-                    }
-                };
-                let r = str_to_u8(_r);
-                let g = str_to_u8(_g);
-                let b = str_to_u8(_b);
-                (_mode, r, g, b)
-            },
-            err => {
-                eprintln!("Invalid format for changing theme");
-                eprintln!("Got: {:?}", err);
-                continue;
-            },
-        };
-
-        let mut t = theme.lock().unwrap();
-        match mode.trim() {
-            "charging" => t.charging = (r, g, b),
-            "low_bat" => t.low_bat = (r, g, b),
-            "full" => t.full = (r, g, b),
-            "normal" => t.normal = (r, g, b),
-            other => eprintln!("Expected one of: charging, low_bat, full, normal, got: {}", other),
-        };
-        drop(t);
+fn status_to_rgb(status: &str, capacity: u8) -> Option<(u8, u8, u8)> {
+    match status.trim() {
+        "Charging" => if capacity < 90 { Some((0, 255, 0)) } else { None },
+        _ => None,
     }
-
-}
-
-fn tcp_thread(theme: Arc<Mutex<Theme>>) {
-    let listener = TcpListener::bind("127.0.0.1:21370")
-        .expect("Failed to listen on 127.0.0.1:21370");
-    for stream in listener.incoming() {
-        if let Ok(s) = stream {
-            let clients_theme = Arc::clone(&theme);
-            thread::spawn(|| handle_client(s, clients_theme));
-        }
-    }
-}
-
-fn suspend_watcher() {
-    let kern_entries = rmesg::logs_iter(rmesg::Backend::Default, false, false)
-        .expect("Failed to init kernel log iter");
-    for maybe_entry in kern_entries {
-        if let Ok(entry) = maybe_entry {
-            if entry.message.contains("PM: suspend exit") {
-                JUST_RESUMED.store(true, Ordering::SeqCst);
-            }
-        }
-    }
-}
-
-fn get_brightness_normalized() -> Option<f32> {
-    let backlight_dir = fs::read_dir("/sys/class/backlight").ok()?
-        .flatten()
-        .map(|entry| entry.path())
-        .next()?;
-
-    let brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("brightness"); tmp };
-    let max_brightness_file = { let mut tmp = backlight_dir.clone(); tmp.push("max_brightness"); tmp };
-
-
-    let brightness = fs::read_to_string(&brightness_file)
-        .expect("Failed to read backlight brightness")
-        .trim()
-        .parse::<f32>()
-        .unwrap_or(1.0);
-    let max_brightness = fs::read_to_string(&max_brightness_file)
-        .expect("Failed to read maximum backlight brightness")
-        .trim()
-        .parse::<f32>()
-        .unwrap_or(1.0);
-
-    Some(brightness / max_brightness)
-}
-
-static JUST_RESUMED: AtomicBool = AtomicBool::new(false);
+}*/
 
 fn main() {
     if unsafe { iopl(3) } != 0 {
         panic!("You must be root to run this utility");
     }
 
-    // enable our control over those leds
-    ec_cmd(0x03, 0x02, 0xc0);
+    let args: Vec<String> = env::args().collect();
+    //println!("My path is {}.", args[0]);
+
+    if args.len() <= 1 {
+        panic!("You must set at lease on param");
+    }
+
+    //println!("I got {:?} agguments: {:?}.", args.len()-1,&args[1..]);
+
+    let arg1 = &args[1];
+    if arg1 == "1" {
+        // enable our control over those leds
+        ec_cmd(0x03, 0x02, 0xc0);
+    }else if arg1 == "2" {
+        set_all_pixels((255,0,0));
+    }else if arg1 == "3" {
+        set_all_pixels((0,255,0));
+    }else if arg1 == "4" {
+        set_all_pixels((0,0,255));
+    }
 
     // find battery
-    let battery_dir = fs::read_dir("/sys/class/power_supply").expect("Failed to open /sys/class/power_supply")
+    /*let battery_dir = fs::read_dir("/sys/class/power_supply").expect("Failed to open /sys/class/power_supply")
         .flatten()
         .find(|ps| {
             let mut path = ps.path();
@@ -282,40 +205,16 @@ fn main() {
     let battery_cap_path = { let mut tmp = battery_dir.clone(); tmp.push("capacity"); tmp };
     let battery_status_path = { let mut tmp = battery_dir.clone(); tmp.push("status"); tmp };
 
-    let theme_mutex = Arc::new(Mutex::new(Theme::default()));
-    let theme_mutex_2 = Arc::clone(&theme_mutex);
-    thread::spawn(|| tcp_thread(theme_mutex_2));
-    thread::spawn(|| suspend_watcher());
-
     println!("Found battery at {:?}", &battery_dir);
-    let mut old = (0, 0, 0);
     loop {
         let capacity = fs::read_to_string(&battery_cap_path).expect("Failed to read battery capacity").trim().parse::<u8>().unwrap_or(0);
         let status = fs::read_to_string(&battery_status_path).expect("Failed to read battery status");
-        let theme = theme_mutex.lock().unwrap();
-        let color = match status.trim() {
-            "Charging" => if capacity < 90 {
-                theme.charging
-            } else {
-                theme.full
-            },
-            _ => match capacity {
-                0..=20 => theme.low_bat,
-                90..=100 => theme.full,
-                _ => theme.normal,
-            },
-        };
-        drop(theme);
-
-        let scale = get_brightness_normalized().unwrap_or(1.0);
-        let tmp = (color.0 as f32 * scale, color.1 as f32 * scale, color.2 as f32 * scale);
-        let adjusted_color = (tmp.0 as u8, tmp.1 as u8, tmp.2 as u8);
-        let force_set = JUST_RESUMED.swap(false, Ordering::SeqCst);
-
-        if old != adjusted_color || force_set {
-            set_all_pixels(adjusted_color);
-            old = adjusted_color;
+        if let Some(color) = status_to_rgb(&status, capacity) {
+            set_all_pixels(color);
+        } else {
+            let color = cap_to_rgb(capacity);
+            set_all_pixels(color);
         }
-        thread::sleep(Duration::from_millis(100));
-    }
+        thread::sleep(Duration::from_millis(500));
+    }*/
 }
