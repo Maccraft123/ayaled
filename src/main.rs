@@ -61,13 +61,14 @@ const EC_CMD_PORT: u16 = 0x66;
 const EC_DATA_PORT: u16 = 0x62;
 
 const EC_IBF: u8 = 0b01;
-const EC_OBF: u8 = 0b10;
+//const EC_OBF: u8 = 0b10;
 
 const WR_EC: u8 = 0x81;
 
 const TIMEOUT: Duration = Duration::from_secs(1);
 const AIR_EC_RAM_BASE: u64 = 0xFE800400;
 const AIR_EC_RAM_SIZE: usize = 0xFF;
+
 
 enum EcRamAccess {
     IoPort,
@@ -77,10 +78,11 @@ enum EcRamAccess {
 static EC_RAM_METHOD: Lazy<Mutex<EcRamAccess>> = Lazy::new(|| {
     let vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor").unwrap_or("asdf".into());
     let name = fs::read_to_string("/sys/class/dmi/id/board_name").unwrap_or("asdf".into());
-    let is_aya_air = vendor.trim() == "AYANEO" && name.trim().contains("AIR");
+    let supported_devices: [&str; 4] = ["AIR", "AIR Pro", "AYANEO 2", "AYANEO GEEK"];
+    let is_supported = vendor.trim() == "AYANEO" && supported_devices.contains(&name.trim());
 
-    if is_aya_air {
-        eprintln!("Using fast-path EC RAM RW for Aya Neo Air");
+    if is_supported {
+        eprintln!("Using fast-path EC RAM RW.");
         match OpenOptions::new().read(true).write(true).create(true).open("/dev/mem") {
             Err(e) => {
                 eprintln!("Failed to open /dev/mem");
