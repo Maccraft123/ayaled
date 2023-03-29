@@ -77,31 +77,31 @@ enum EcRamAccess {
 static EC_RAM_METHOD: Lazy<Mutex<EcRamAccess>> = Lazy::new(|| {
     let vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor").unwrap_or("asdf".into());
     let name = fs::read_to_string("/sys/class/dmi/id/board_name").unwrap_or("asdf".into());
-    let is_aya_air = vendor.trim() == "AYANEO" && name.trim().contains("AIR");
+    let supported_devices: [&str; 4] = ["AIR", "AIR Pro", "AYANEO 2", "GEEK"];
+    let is_supported = vendor.trim() == "AYANEO" && supported_devices.contains(&name.trim());
 
-    if is_aya_air {
-        eprintln!("Using fast-path EC RAM RW for Aya Neo Air");
-        match OpenOptions::new().read(true).write(true).create(true).open("/dev/mem") {
-            Err(e) => {
-                eprintln!("Failed to open /dev/mem");
-                eprintln!("Due to: {}", e);
-                eprintln!("Falling back to I/O Port for EC RAM RW");
-                Mutex::new(EcRamAccess::IoPort)
-            },
-            Ok(f) => {
-                match unsafe { MmapOptions::new().offset(AIR_EC_RAM_BASE).len(AIR_EC_RAM_SIZE).map_mut(&f) } {
-                    Ok(map) => Mutex::new(EcRamAccess::DevMem(map)),
-                    Err(e) => {
-                        eprintln!("Failed to mmap /dev/mem");
-                        eprintln!("Due to: {}", e);
-                        eprintln!("Falling back to I/O Port for EC RAM RW");
-                        Mutex::new(EcRamAccess::IoPort)
-                    }
+    if !is_supported {
+        panic!("Not running on a supported device");
+    }
+    eprintln!("Using fast-path EC RAM RW.");
+    match OpenOptions::new().read(true).write(true).create(true).open("/dev/mem") {
+        Err(e) => {
+            eprintln!("Failed to open /dev/mem");
+            eprintln!("Due to: {}", e);
+            eprintln!("Falling back to I/O Port for EC RAM RW");
+            Mutex::new(EcRamAccess::IoPort)
+        },
+        Ok(f) => {
+            match unsafe { MmapOptions::new().offset(AIR_EC_RAM_BASE).len(AIR_EC_RAM_SIZE).map_mut(&f) } {
+                Ok(map) => Mutex::new(EcRamAccess::DevMem(map)),
+                Err(e) => {
+                    eprintln!("Failed to mmap /dev/mem");
+                    eprintln!("Due to: {}", e);
+                    eprintln!("Falling back to I/O Port for EC RAM RW");
+                    Mutex::new(EcRamAccess::IoPort)
                 }
             }
         }
-    } else {
-        panic!("Not running on a supported device");
     }
 });
 
