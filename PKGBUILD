@@ -2,8 +2,9 @@
 pkgname=ayaled
 pkgver=0.1.0
 pkgrel=1
-makedepends=('cargo')
+pkgdesc="A daemon to manage joystick LEDs on AYANEO devices"
 arch=('x86_64')
+makedepends=('cargo')
 
 prepare() {
   cargo fetch --locked --target "$CARCH-unknown-linux-gnu"
