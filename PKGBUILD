@@ -2,7 +2,7 @@
 pkgname=ayaled
 pkgver=0.1.0
 pkgrel=1
-makedepends=('rust' 'cargo')
+makedepends=('cargo')
 arch=('x86_64')
 
 prepare() {
