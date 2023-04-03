@@ -4,8 +4,6 @@ use std::time::{Instant, Duration};
 use std::arch::asm;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::ops::DerefMut;
-use std::net::{TcpStream, TcpListener};
-use std::io::{BufRead, BufReader};
 use rouille::Response;
 use memmap::{MmapMut, MmapOptions};
 use libc::iopl;
@@ -169,60 +167,6 @@ impl Default for Theme {
     }
 }
 
-fn handle_client(stream: TcpStream, theme: Arc<Mutex<Theme>>) {
-    let input = BufReader::new(stream);
-    for line in input.lines() {
-        let Ok(line) = line else { continue };
-        let split = line.split(' ');
-        let (mode, r, g, b) = match split.collect::<Vec<_>>().as_slice() {
-            &[_mode, _r, _g, _b] => {
-                let str_to_u8 = |input: &str| {
-                    match input.parse::<u8>() {
-                        Ok(val) => val,
-                        Err(e) => {
-                            eprintln!("Failed to parse into u8");
-                            eprintln!("Due to {}", e);
-                            eprintln!("Substituting with 0");
-                            0
-                        },
-                    }
-                };
-                let r = str_to_u8(_r);
-                let g = str_to_u8(_g);
-                let b = str_to_u8(_b);
-                (_mode, r, g, b)
-            },
-            err => {
-                eprintln!("Invalid format for changing theme");
-                eprintln!("Got: {:?}", err);
-                continue;
-            },
-        };
-
-        let mut t = theme.lock().unwrap();
-        match mode.trim() {
-            "charging" => t.charging = (r, g, b),
-            "low_bat" => t.low_bat = (r, g, b),
-            "full" => t.full = (r, g, b),
-            "normal" => t.normal = (r, g, b),
-            other => eprintln!("Expected one of: charging, low_bat, full, normal, got: {}", other),
-        };
-        drop(t);
-    }
-
-}
-
-fn tcp_thread(theme: Arc<Mutex<Theme>>) {
-    let listener = TcpListener::bind("127.0.0.1:21370")
-        .expect("Failed to listen on 127.0.0.1:21370");
-    for stream in listener.incoming() {
-        if let Ok(s) = stream {
-            let clients_theme = Arc::clone(&theme);
-            thread::spawn(|| handle_client(s, clients_theme));
-        }
-    }
-}
-
 fn http_thread(theme: Arc<Mutex<Theme>>) {
     rouille::start_server("127.0.0.1:21371", move |request| {
         rouille::router!(request,
@@ -305,9 +249,7 @@ fn main() {
 
     let theme_mutex = Arc::new(Mutex::new(Theme::default()));
     let theme_mutex_2 = Arc::clone(&theme_mutex);
-    let theme_mutex_3 = Arc::clone(&theme_mutex);
-    thread::spawn(|| tcp_thread(theme_mutex_2));
-    thread::spawn(|| http_thread(theme_mutex_3));
+    thread::spawn(|| http_thread(theme_mutex_2));
     thread::spawn(|| suspend_watcher());
 
     println!("Found battery at {:?}", &battery_dir);
