@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::ops::DerefMut;
 use std::net::{TcpStream, TcpListener};
 use std::io::{BufRead, BufReader};
+use rouille::Response;
 use memmap::{MmapMut, MmapOptions};
 use libc::iopl;
 use once_cell::sync::Lazy;
@@ -222,6 +223,26 @@ fn tcp_thread(theme: Arc<Mutex<Theme>>) {
     }
 }
 
+fn http_thread(theme: Arc<Mutex<Theme>>) {
+    rouille::start_server("127.0.0.1:21371", move |request| {
+        rouille::router!(request,
+            (GET) (/set/{mode: String}/{r: u8}/{g: u8}/{b:u8}) => {
+                let mut t = theme.lock().unwrap();
+                match mode.as_str() {
+                    "charging" => t.charging = (r, g, b),
+                    "low_bat" => t.low_bat = (r, g, b),
+                    "full" => t.full = (r, g, b),
+                    "normal" => t.normal = (r, g, b),
+                    _ => return Response::empty_400(),
+                }
+                drop(t);
+                Response::empty_204()
+            },
+            _ => Response::empty_404()
+        )
+    });
+}
+
 fn suspend_watcher() {
     let kern_entries = rmesg::logs_iter(rmesg::Backend::Default, false, false)
         .expect("Failed to init kernel log iter");
@@ -284,7 +305,9 @@ fn main() {
 
     let theme_mutex = Arc::new(Mutex::new(Theme::default()));
     let theme_mutex_2 = Arc::clone(&theme_mutex);
+    let theme_mutex_3 = Arc::clone(&theme_mutex);
     thread::spawn(|| tcp_thread(theme_mutex_2));
+    thread::spawn(|| http_thread(theme_mutex_3));
     thread::spawn(|| suspend_watcher());
 
     println!("Found battery at {:?}", &battery_dir);
