@@ -182,6 +182,19 @@ fn http_thread(theme: Arc<Mutex<Theme>>) {
                 drop(t);
                 Response::empty_204()
             },
+            (GET) (/get/{mode: String}) => {
+                let t = theme.lock().unwrap();
+                let data = match mode.as_str() {
+                    "charging" => &t.charging,
+                    "low_bat" => &t.low_bat,
+                    "full" => &t.full,
+                    "normal" => &t.normal,
+                    _ => return Response::empty_400(),
+                };
+                let response = Response::text(format!("{}:{}:{}\n", data.0, data.1, data.2));
+                drop(t);
+                response
+            },
             _ => Response::empty_404()
         )
     });
