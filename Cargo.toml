@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2.139"
+libc = "0.2.144"
 memmap = "0.7.0"
 rmesg = { version = "1.0.20", default-features = false, features = ["sync"] }
-rouille = "3.6.1"
+rouille = "3.6.2"
