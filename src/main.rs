@@ -1,10 +1,64 @@
 use std::thread;
+use std::arch::asm;
 use std::fs::{self, OpenOptions};
 use std::time::Duration;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use rouille::Response;
 use memmap::{MmapMut, MmapOptions};
 use libc::iopl;
+
+fn outb(port: u16, data: u8) {
+    unsafe { asm!("out dx, al", in("dx") port, in("al") data, options(nostack)) }
+}
+
+struct AirPlusLedCtl();
+
+impl AirPlusLedCtl {
+    const ADDR_PORT: u16 = 0x4e;
+    const DATA_PORT: u16 = 0x4f;
+
+    fn cmd(&mut self, hi: u8, lo: u8, val: u8) {
+        outb(Self::ADDR_PORT, 0x2e);
+        outb(Self::DATA_PORT, 0x11);
+        outb(Self::ADDR_PORT, 0x2f);
+        outb(Self::DATA_PORT, hi);
+
+        outb(Self::ADDR_PORT, 0x2e);
+        outb(Self::DATA_PORT, 0x10);
+        outb(Self::ADDR_PORT, 0x2f);
+        outb(Self::DATA_PORT, lo);
+
+        outb(Self::ADDR_PORT, 0x2e);
+        outb(Self::DATA_PORT, 0x12);
+        outb(Self::ADDR_PORT, 0x2f);
+        outb(Self::DATA_PORT, val);
+    }
+}
+
+impl LedCtl for AirPlusLedCtl {
+    fn init() -> Self {
+        let mut tmp = Self();
+        tmp.cmd(0xd1, 0x87, 0xa5);
+        tmp.cmd(0xd1, 0xb2, 0x31);
+        tmp.cmd(0xd1, 0xc6, 0x01);
+
+        tmp.cmd(0xd1, 0x87, 0xa5);
+        tmp.cmd(0xd1, 0x72, 0x31);
+        tmp.cmd(0xd1, 0x86, 0x01);
+
+        tmp.cmd(0xd1, 0x87, 0xa5);
+        tmp.cmd(0xd1, 0x70, 0x00);
+        tmp.cmd(0xd1, 0x86, 0x01);
+        tmp.cmd(0xd1, 0x60, 0x80);
+        tmp
+    }
+    fn probe() -> bool {
+        let vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor").unwrap_or("asdf".into());
+        let name = fs::read_to_string("/sys/class/dmi/id/product_name").unwrap_or("asdf".into());
+
+        return vendor.trim() == "AYANEO" && name.trim() == "AIR Plus";
+    }
+}
 
 struct AirLedCtl {
     map: MmapMut, 
@@ -93,7 +147,11 @@ trait LedCtl {
 
 fn get_led_controller() -> Box<dyn LedCtl> {
     if AirLedCtl::probe() {
+        println!("Using AIR LED controller");
         Box::new(AirLedCtl::init())
+    } else if AirPlusLedCtl::probe() {
+        println!("Using AIR Plus LED controller");
+        Box::new(AirPlusLedCtl::init())
     } else {
         panic!("This device is not supported in ayaled")
     }
@@ -195,6 +253,7 @@ fn main() {
 
     let mut led_ctl = get_led_controller();
     if !led_ctl.supports_rgb() {
+        println!("This device doesn't support setting RGB values. quitting");
         return;
     }
 
