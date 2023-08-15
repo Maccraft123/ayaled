@@ -1,4 +1,9 @@
-# fuck this, i'm not maintaining this
+# fuck this, not gonna maintain it anymore. old readme below
+
+
+
+
+
 
 # Ayaled - A small and cute tool to control leds on Aya Neo Devices
 
