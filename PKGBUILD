@@ -1,6 +1,6 @@
 # Maintainer: Maya Matuszczyk <maccraft123mc@gmail.com>
 pkgname=ayaled
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="A daemon to manage joystick LEDs on AYANEO devices"
 arch=('x86_64')
