@@ -259,7 +259,7 @@ fn main() {
 
     let mut led_ctl = get_led_controller();
     if !led_ctl.supports_rgb() {
-        println!("NOTICE: This device doesn't support setting RGB values. quitting");
+        println!("NOTICE: This device doesn't support setting RGB values");
     }
 
     // find battery
