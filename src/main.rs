@@ -52,6 +52,9 @@ impl LedCtl for AirPlusLedCtl {
         tmp.cmd(0xd1, 0x60, 0x80);
         tmp
     }
+    fn reinit(&mut self) {
+        Self::init();
+    }
     fn probe() -> bool {
         let vendor = fs::read_to_string("/sys/class/dmi/id/board_vendor").unwrap_or("asdf".into());
         let name = fs::read_to_string("/sys/class/dmi/id/product_name").unwrap_or("asdf".into());
@@ -81,7 +84,6 @@ impl AirLedCtl {
         self.ec_cmd(js, led * 3 + 1, color.1);
         self.ec_cmd(js, led * 3 + 2, color.2);
     }
-
     fn ec_cmd(&mut self, cmd: u8, p1: u8, p2: u8) {
         self.map[0x6d] = cmd;
         self.map[0xb1] = p1;
@@ -122,6 +124,9 @@ impl LedCtl for AirLedCtl {
 
         is_supported
     }
+    fn reinit(&mut self) {
+        self.ec_cmd(0x03, 0x02, 0x00);
+    }
     fn set_rgb(&mut self, color: (u8, u8, u8)) {
         self.set_pixel(Self::LEFT_JOYSTICK, Self::RIGHT_LED, color);
         self.set_pixel(Self::LEFT_JOYSTICK, Self::BOTTOM_LED, color);
@@ -141,6 +146,7 @@ impl LedCtl for AirLedCtl {
 trait LedCtl {
     fn init() -> Self where Self: Sized;
     fn probe() -> bool where Self: Sized;
+    fn reinit(&mut self);
     fn set_rgb(&mut self, _rgb: (u8, u8, u8)) {}
     fn supports_rgb(&self) -> bool { false }
 }
@@ -253,8 +259,7 @@ fn main() {
 
     let mut led_ctl = get_led_controller();
     if !led_ctl.supports_rgb() {
-        println!("This device doesn't support setting RGB values. quitting");
-        return;
+        println!("NOTICE: This device doesn't support setting RGB values. quitting");
     }
 
     // find battery
@@ -299,9 +304,13 @@ fn main() {
         let scale = get_brightness_normalized().unwrap_or(1.0);
         let tmp = (color.0 as f32 * scale, color.1 as f32 * scale, color.2 as f32 * scale);
         let adjusted_color = (tmp.0 as u8, tmp.1 as u8, tmp.2 as u8);
-        let force_set = JUST_RESUMED.swap(false, Ordering::SeqCst);
+        let slept = JUST_RESUMED.swap(false, Ordering::SeqCst);
 
-        if old != adjusted_color || force_set {
+        if slept {
+            led_ctl.reinit();
+        }
+
+        if old != adjusted_color || slept {
             led_ctl.set_rgb(adjusted_color);
             old = adjusted_color;
         }
