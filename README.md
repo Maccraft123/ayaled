@@ -1,4 +1,4 @@
-# Ayaled - A small and cute tool to control leds on Aya Neo Devices
+# Ayaled - A small and cute tool to control leds on some Aya Neo Devices
 
 ## API:
 Everything is controlled via HTTP requests.
